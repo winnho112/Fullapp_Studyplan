@@ -1,8 +1,22 @@
+# ── Backend (Python) ───────────────────────────────────────────
 __pycache__/
 *.pyc
-venv/
-.env
+backend/venv/
 *.egg-info/
-dist/
-build/
 .pytest_cache/
+
+# ── Frontend (Node) ───────────────────────────────────────────
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+*.local
+npm-debug.log*
+
+# ── Environment ───────────────────────────────────────────────
+.env
+
+# ── OS / Editor ───────────────────────────────────────────────
+.DS_Store
+.vscode/*
+.idea
+*.sw?
