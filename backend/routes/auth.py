@@ -25,6 +25,12 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
 
+# Validate required env vars at import time so the error is obvious
+if not SUPABASE_URL:
+    print("⚠  WARNING: SUPABASE_URL is not set. Auth endpoints will fail.")
+if not SUPABASE_ANON_KEY:
+    print("⚠  WARNING: SUPABASE_ANON_KEY is not set. Auth endpoints will fail.")
+
 security = HTTPBearer()
 
 
@@ -64,6 +70,11 @@ def get_current_user(
 
 def _supabase_auth(path: str, body: dict) -> dict:
     """Call the Supabase GoTrue REST API and return the JSON response."""
+    if not SUPABASE_URL or not SUPABASE_ANON_KEY:
+        raise HTTPException(
+            status_code=500,
+            detail="Server misconfiguration: SUPABASE_URL or SUPABASE_ANON_KEY is missing.",
+        )
     url = f"{SUPABASE_URL}{path}"
     headers = {
         "apikey": SUPABASE_ANON_KEY,
@@ -75,10 +86,19 @@ def _supabase_auth(path: str, body: dict) -> dict:
         with urllib.request.urlopen(req) as resp:
             return json.loads(resp.read().decode())
     except urllib.error.HTTPError as e:
-        err = json.loads(e.read().decode())
+        err_body = e.read().decode()
+        try:
+            err = json.loads(err_body)
+        except json.JSONDecodeError:
+            err = {"msg": err_body}
         raise HTTPException(
             status_code=e.code,
             detail=err.get("msg") or err.get("error_description") or str(err),
+        )
+    except urllib.error.URLError as e:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Could not connect to Supabase auth service: {e.reason}",
         )
 
 
