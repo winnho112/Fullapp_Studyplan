@@ -15,9 +15,9 @@
   ],
   "routes": [
     { "src": "/health", "dest": "api/index.py" },
-    { "src": "/auth/(.*)", "dest": "api/index.py" },
-    { "src": "/plans/(.*)", "dest": "api/index.py" },
-    { "src": "/sessions/(.*)", "dest": "api/index.py" },
+    { "src": "/auth(/.*)?$", "dest": "api/index.py" },
+    { "src": "/plans(/.*)?$", "dest": "api/index.py" },
+    { "src": "/sessions(/.*)?$", "dest": "api/index.py" },
     { "src": "/assets/(.*)", "dest": "/frontend/assets/$1" },
     { "handle": "filesystem" },
     { "src": "/(.*)", "dest": "/frontend/index.html" }
