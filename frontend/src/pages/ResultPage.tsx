@@ -28,7 +28,7 @@ interface LocationState {
 }
 
 interface ResultPageProps {
-  onStartStudying: (plan: GeneratedPlan) => void;
+  onStartStudying: (plan: GeneratedPlan) => Promise<void>;
 }
 
 export default function ResultPage({ onStartStudying }: ResultPageProps) {
@@ -142,10 +142,10 @@ export default function ResultPage({ onStartStudying }: ResultPageProps) {
           </p>
           <PearlButton
             label="Start Studying"
-            onClick={() => {
+            onClick={async () => {
               if (!savedRef.current) {
                 savedRef.current = true;
-                onStartStudying(plan);
+                await onStartStudying(plan);
               }
               navigate("/dashboard");
             }}
