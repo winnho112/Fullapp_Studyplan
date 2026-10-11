@@ -39,8 +39,8 @@ app.add_middleware(
 # ── Register routers ───────────────────────────────────────────
 
 app.include_router(auth.router)
-app.include_router(plans.router)
-app.include_router(sessions.router)
+app.include_router(plans.router, prefix="/plans")
+app.include_router(sessions.router, prefix="/sessions")
 
 
 # ── Root routes ────────────────────────────────────────────────
