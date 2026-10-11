@@ -2,8 +2,7 @@
  * LoginPage — Dual-mode login / sign-up screen
  * Route: /
  *
- * Login mode:  validates credentials against localStorage accounts
- * Sign-up mode: creates a new account in localStorage, then switches to login
+ * Calls the FastAPI backend for auth (which proxies to Supabase Auth).
  *
  * Props flow: Receives onLogin callback from App
  */
@@ -12,10 +11,9 @@ import { useNavigate } from "react-router-dom";
 import PrimaryButton from "../components/PrimaryButton";
 import InputField from "../components/InputField";
 import { BookOpen } from "lucide-react";
-import { findAccount, saveAccount, emailExists, getUserName } from "../lib/auth";
 
 interface LoginPageProps {
-  onLogin: (email: string, name: string) => void;
+  onLogin: (email: string, password: string, name?: string) => Promise<boolean>;
 }
 
 export default function LoginPage({ onLogin }: LoginPageProps) {
@@ -26,6 +24,7 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
+  const [loading, setLoading] = useState(false);
 
   /** Switch between login and sign-up, clearing all fields/errors */
   const toggleMode = () => {
@@ -37,38 +36,32 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
     setSuccess("");
   };
 
-  /** Handle sign-up: validate inputs, save account, switch to login */
-  const handleSignUp = () => {
+  /** Handle sign-up: call API, then switch to login */
+  const handleSignUp = async () => {
     setError("");
     setSuccess("");
 
-    if (!name.trim()) {
-      setError("Name is required");
-      return;
-    }
-    if (!email.trim()) {
-      setError("Email is required");
-      return;
-    }
-    if (password.length < 6) {
-      setError("Password must be at least 6 characters");
-      return;
-    }
-    if (emailExists(email)) {
-      setError("An account with this email already exists");
-      return;
-    }
+    if (!name.trim()) { setError("Name is required"); return; }
+    if (!email.trim()) { setError("Email is required"); return; }
+    if (password.length < 6) { setError("Password must be at least 6 characters"); return; }
 
-    saveAccount({ name: name.trim(), email, password });
-    setSuccess("Account created! You can now log in.");
-    setMode("login");
-    setName("");
-    setEmail("");
-    setPassword("");
+    setLoading(true);
+    try {
+      await onLogin(email, password, name.trim());
+      setSuccess("Account created! Check your email to confirm, then log in.");
+      setMode("login");
+      setName("");
+      setEmail("");
+      setPassword("");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Sign up failed");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  /** Handle login: check credentials against stored accounts */
-  const handleLogin = () => {
+  /** Handle login: call API, navigate to dashboard */
+  const handleLogin = async () => {
     setError("");
     setSuccess("");
 
@@ -76,11 +69,15 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
       setError("Email and password are required");
       return;
     }
-    if (findAccount(email, password)) {
-      onLogin(email, getUserName(email));
+
+    setLoading(true);
+    try {
+      await onLogin(email, password);
       navigate("/dashboard");
-    } else {
-      setError("Invalid email or password");
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : "Invalid email or password");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -152,8 +149,9 @@ export default function LoginPage({ onLogin }: LoginPageProps) {
             <PrimaryButton
               onClick={isSignUp ? handleSignUp : handleLogin}
               fullWidth
+              disabled={loading}
             >
-              {isSignUp ? "Sign Up" : "Sign In"}
+              {loading ? "Please wait..." : isSignUp ? "Sign Up" : "Sign In"}
             </PrimaryButton>
           </div>
 

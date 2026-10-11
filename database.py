@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS public.study_plans (
     subject         TEXT NOT NULL,
     due_date        DATE NOT NULL,
     assignment_type TEXT NOT NULL
-        CHECK (assignment_type IN ('essay','report','presentation','exam','project')),
+        CHECK (assignment_type IN ('essay','report','presentation','exam-prep','project')),
     workload        TEXT NOT NULL
         CHECK (workload IN ('light','moderate','heavy')),
     status          TEXT NOT NULL DEFAULT 'active'
@@ -59,14 +59,14 @@ CREATE TABLE IF NOT EXISTS public.availability (
 CREATE TABLE IF NOT EXISTS public.preferences (
     id                   UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     plan_id              UUID NOT NULL REFERENCES public.study_plans(id) ON DELETE CASCADE,
-    session_length       INTEGER NOT NULL
-        CHECK (session_length IN (25, 50, 90)),
+    session_length       TEXT NOT NULL
+        CHECK (session_length IN ('25', '50', '90')),
     preferred_study_time TEXT NOT NULL
         CHECK (preferred_study_time IN ('morning','afternoon','evening')),
     break_frequency      TEXT NOT NULL
-        CHECK (break_frequency IN ('every_25min','every_50min','when_needed')),
+        CHECK (break_frequency IN ('every-25','every-50','every-90')),
     priority             TEXT NOT NULL
-        CHECK (priority IN ('finish_early','balanced','difficult_first'))
+        CHECK (priority IN ('speed','quality','balanced'))
 );
 
 CREATE TABLE IF NOT EXISTS public.study_sessions (

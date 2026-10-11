@@ -1,18 +1,11 @@
 /**
  * App.tsx — Central State + Router for StudyPlan MVP
  *
- * DATA FLOW:
- * 1. PROPS DOWN: App passes assignmentData, availabilityData,
- *    preferencesData to pages via route elements
- * 2. CALLBACKS UP: Pages call onAssignmentComplete(data),
- *    onAvailabilityComplete(data), onPreferencesComplete(data)
- *    to update App state
- * 3. ROUTER STATE: On "Create My Plan", navigate to /create/result
- *    passing the generated plan as router state
- *
- * STATE: All form state lives here so it persists across navigation.
+ * All data is persisted in the FastAPI backend via API calls.
+ * Plan generation happens on the frontend; the result is POSTed
+ * to the backend along with the generated sessions.
  */
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Routes, Route } from "react-router-dom";
 import type {
   AssignmentData,
@@ -21,10 +14,17 @@ import type {
   GeneratedPlan,
   StudyPlanEntry,
   DashboardPlan,
-  SavedPlan,
 } from "./types";
-import { loadSavedPlans, saveSavedPlans } from "./lib/storage";
-import { saveCurrentUser, loadCurrentUser, getUserName } from "./lib/auth";
+import { loadCurrentUser, getUserName, saveSession } from "./lib/auth";
+import {
+  apiLogin,
+  apiSignup,
+  apiGetPlans,
+  apiCreatePlan,
+  apiUpdatePlan,
+  apiDeletePlan,
+  type ApiPlan,
+} from "./lib/api";
 
 import LoginPage from "./pages/LoginPage";
 import DashboardPage from "./pages/DashboardPage";
@@ -35,19 +35,6 @@ import ReviewPage from "./pages/ReviewPage";
 import ResultPage from "./pages/ResultPage";
 import PlanDetailPage from "./pages/PlanDetailPage";
 
-/** Map a saved plan to the dashboard card data shape */
-function toDashboardPlan(saved: SavedPlan): DashboardPlan {
-  return {
-    id: saved.id,
-    name: saved.plan.assignmentName,
-    subject: saved.plan.subject,
-    dueDate: saved.plan.dueDate,
-    progress: saved.progress,
-    daysRemaining: saved.daysRemaining,
-    availability: saved.availability,
-  };
-}
-
 /** Calculate days remaining until the due date (minimum 1) */
 function calcDaysRemaining(dueDate: string): number {
   const today = new Date();
@@ -55,6 +42,34 @@ function calcDaysRemaining(dueDate: string): number {
   const diff = due.getTime() - today.getTime();
   return Math.max(Math.ceil(diff / (1000 * 60 * 60 * 24)), 1);
 }
+
+/** Map an API plan response to the DashboardPlan shape */
+function apiPlanToDashboard(p: ApiPlan): DashboardPlan {
+  return {
+    id: p.id,
+    name: p.assignment_name,
+    subject: p.subject,
+    dueDate: p.due_date,
+    progress: p.completion_percentage,
+    daysRemaining: calcDaysRemaining(p.due_date),
+    availability: p.availability ?? {
+      monday: 0, tuesday: 0, wednesday: 0, thursday: 0,
+      friday: 0, saturday: 0, sunday: 0,
+    },
+  };
+}
+
+/** Return "YYYY-MM-DD" for a Date */
+function toISODate(d: Date): string {
+  return d.toISOString().split("T")[0];
+}
+
+/** Time slot definitions based on preferred study time */
+const TIME_SLOTS: Record<string, { label: string; start: string; end: string }> = {
+  morning:   { label: "9:00 AM - 12:00 PM", start: "09:00", end: "12:00" },
+  afternoon: { label: "1:00 PM - 5:00 PM",  start: "13:00", end: "17:00" },
+  evening:   { label: "6:00 PM - 10:00 PM", start: "18:00", end: "22:00" },
+};
 
 // Rule-based plan generation — no AI, no backend
 function generateStudyPlan(
@@ -65,75 +80,32 @@ function generateStudyPlan(
   const today = new Date();
   const due = new Date(assignment.dueDate);
   const diffTime = due.getTime() - today.getTime();
-  const daysRemaining = Math.max(
-    Math.ceil(diffTime / (1000 * 60 * 60 * 24)),
-    1
-  );
+  const daysRemaining = Math.max(Math.ceil(diffTime / (1000 * 60 * 60 * 24)), 1);
 
   // Tasks based on workload
   let tasks: string[];
   if (assignment.workload === "heavy" && daysRemaining <= 5) {
-    tasks = [
-      "Research & gather sources",
-      "Analyse data",
-      "Draft findings",
-      "Write recommendations",
-      "Review & edit",
-    ];
+    tasks = ["Research & gather sources", "Analyse data", "Draft findings", "Write recommendations", "Review & edit"];
   } else if (assignment.workload === "heavy") {
-    tasks = [
-      "Research & gather sources",
-      "Analyse data",
-      "Create outline",
-      "Draft findings",
-      "Write recommendations",
-      "Review & edit",
-      "Final polish",
-    ];
+    tasks = ["Research & gather sources", "Analyse data", "Create outline", "Draft findings", "Write recommendations", "Review & edit", "Final polish"];
   } else if (assignment.workload === "moderate") {
     tasks = ["Research", "Draft", "Review", "Finalise"];
   } else {
     tasks = ["Plan", "Write", "Submit"];
   }
 
-  // Time slot from preferred study time
-  const timeSlots: Record<string, string> = {
-    morning: "9:00 AM - 12:00 PM",
-    afternoon: "1:00 PM - 5:00 PM",
-    evening: "6:00 PM - 10:00 PM",
-  };
-  const timeSlot = timeSlots[preferences.studyTime] || "Flexible";
+  const slot = TIME_SLOTS[preferences.studyTime] || TIME_SLOTS.afternoon;
   const sessionDuration = Number(preferences.sessionLength);
 
-  // Build day-by-day schedule
-  const dayNames = [
-    "Monday",
-    "Tuesday",
-    "Wednesday",
-    "Thursday",
-    "Friday",
-    "Saturday",
-    "Sunday",
-  ];
-  const dayKeys: (keyof AvailabilityData)[] = [
-    "monday",
-    "tuesday",
-    "wednesday",
-    "thursday",
-    "friday",
-    "saturday",
-    "sunday",
-  ];
+  // Build day-by-day schedule with proper ISO dates and HH:MM times
+  const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  const dayKeys: (keyof AvailabilityData)[] = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
 
   const schedule: StudyPlanEntry[] = [];
   let taskIndex = 0;
   const currentDate = new Date(today);
 
-  for (
-    let dayOffset = 0;
-    dayOffset < daysRemaining && taskIndex < tasks.length;
-    dayOffset++
-  ) {
+  for (let dayOffset = 0; dayOffset < daysRemaining && taskIndex < tasks.length; dayOffset++) {
     const checkDate = new Date(currentDate);
     checkDate.setDate(checkDate.getDate() + dayOffset);
     const dayOfWeek = checkDate.getDay();
@@ -142,25 +114,19 @@ function generateStudyPlan(
     const hoursAvailable = availability[dayKey];
 
     if (hoursAvailable > 0 && taskIndex < tasks.length) {
-      const sessionsPerDay = Math.max(
-        1,
-        Math.floor((hoursAvailable * 60) / (sessionDuration + 10))
-      );
-      for (
-        let s = 0;
-        s < sessionsPerDay && taskIndex < tasks.length;
-        s++
-      ) {
+      const sessionsPerDay = Math.max(1, Math.floor((hoursAvailable * 60) / (sessionDuration + 10)));
+      for (let s = 0; s < sessionsPerDay && taskIndex < tasks.length; s++) {
         schedule.push({
           day: dayNames[dayKeyIndex],
-          date: checkDate.toLocaleDateString("en-AU", {
-            day: "numeric",
-            month: "short",
-          }),
+          date: checkDate.toLocaleDateString("en-AU", { day: "numeric", month: "short" }),
           task: tasks[taskIndex],
-          timeSlot,
+          timeSlot: slot.label,
           duration: sessionDuration,
-        });
+          // Extra fields for backend (not in type but carried through)
+          sessionDateISO: toISODate(checkDate),
+          startTime: slot.start,
+          endTime: slot.end,
+        } as StudyPlanEntry & { sessionDateISO: string; startTime: string; endTime: string });
         taskIndex++;
       }
     }
@@ -174,7 +140,10 @@ function generateStudyPlan(
       task: tasks[taskIndex],
       timeSlot: "Flexible",
       duration: sessionDuration,
-    });
+      sessionDateISO: toISODate(today),
+      startTime: slot.start,
+      endTime: slot.end,
+    } as StudyPlanEntry & { sessionDateISO: string; startTime: string; endTime: string });
     taskIndex++;
   }
 
@@ -194,57 +163,60 @@ function generateStudyPlan(
 // MAIN APP COMPONENT
 // ============================================================
 export default function App() {
-  // CENTRAL STATE — persists across page navigation
+  // CENTRAL STATE — form data persists across page navigation
   const [assignment, setAssignment] = useState<AssignmentData>({
-    name: "",
-    subject: "",
-    dueDate: "",
-    type: "essay",
-    workload: "moderate",
+    name: "", subject: "", dueDate: "", type: "essay", workload: "moderate",
   });
-
   const [availability, setAvailability] = useState<AvailabilityData>({
-    monday: 0,
-    tuesday: 0,
-    wednesday: 0,
-    thursday: 0,
-    friday: 0,
-    saturday: 0,
-    sunday: 0,
+    monday: 0, tuesday: 0, wednesday: 0, thursday: 0, friday: 0, saturday: 0, sunday: 0,
   });
-
   const [preferences, setPreferences] = useState<PreferencesData>({
-    sessionLength: "50",
-    studyTime: "afternoon",
-    breakFrequency: "every-50",
-    priority: "balanced",
+    sessionLength: "50", studyTime: "afternoon", breakFrequency: "every-50", priority: "balanced",
   });
 
-  // CURRENT USER — persisted session (email or null)
-  const [currentUser, setCurrentUser] = useState<string | null>(() =>
-    loadCurrentUser()
-  );
+  // CURRENT USER — persisted session
+  const [currentUser, setCurrentUser] = useState<string | null>(() => loadCurrentUser());
   const [currentUserName, setCurrentUserName] = useState<string>(() =>
     currentUser ? getUserName(currentUser) : ""
   );
 
-  // SAVED PLANS — scoped to the current user, persisted in localStorage
-  const [savedPlans, setSavedPlans] = useState<SavedPlan[]>(() =>
-    currentUser ? loadSavedPlans(currentUser) : []
-  );
+  // DASHBOARD PLANS — fetched from backend API
+  const [dashboardPlans, setDashboardPlans] = useState<DashboardPlan[]>([]);
 
-  // CALLBACKS UP — pages call these to update App state
-  const handleAssignmentComplete = (data: AssignmentData) =>
-    setAssignment(data);
-  const handleAvailabilityComplete = (data: AvailabilityData) =>
-    setAvailability(data);
-  const handlePreferencesComplete = (data: PreferencesData) =>
-    setPreferences(data);
-  const handleLogin = (email: string, name: string) => {
-    saveCurrentUser(email);
-    setCurrentUser(email);
-    setCurrentUserName(name);
-    setSavedPlans(loadSavedPlans(email));
+  // Fetch plans from API whenever user logs in
+  const refreshPlans = useCallback(async () => {
+    try {
+      const plans = await apiGetPlans();
+      setDashboardPlans(plans.map(apiPlanToDashboard));
+    } catch {
+      setDashboardPlans([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (currentUser) refreshPlans();
+  }, [currentUser, refreshPlans]);
+
+  // CALLBACKS UP
+  const handleAssignmentComplete = (data: AssignmentData) => setAssignment(data);
+  const handleAvailabilityComplete = (data: AvailabilityData) => setAvailability(data);
+  const handlePreferencesComplete = (data: PreferencesData) => setPreferences(data);
+
+  const handleLogin = async (email: string, password: string, name?: string) => {
+    try {
+      if (name) {
+        // Signup flow
+        await apiSignup(email, password, name);
+      }
+      // Login (after signup or direct login)
+      const result = await apiLogin(email, password);
+      saveSession(result.access_token, result.refresh_token, result.user.email, name || email.split("@")[0]);
+      setCurrentUser(result.user.email);
+      setCurrentUserName(name || email.split("@")[0]);
+      return true;
+    } catch (err) {
+      throw err; // Let LoginPage handle the error
+    }
   };
 
   // PLAN GENERATION — called from ReviewPage
@@ -252,91 +224,69 @@ export default function App() {
     return generateStudyPlan(assignment, availability, preferences);
   };
 
-  // SAVE PLAN — called from ResultPage's "Start Studying" button
-  const handleStartStudying = (plan: GeneratedPlan) => {
-    const id =
-      typeof crypto !== "undefined" && "randomUUID" in crypto
-        ? crypto.randomUUID()
-        : `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
-    const saved: SavedPlan = {
-      id,
-      createdAt: new Date().toISOString(),
-      plan,
-      assignment,
-      availability,
-      preferences,
-      progress: 0,
-      daysRemaining: plan.totalDays,
-      completedSessions: plan.schedule.map(() => false),
-    };
-    setSavedPlans((prev) => {
-      const next = [saved, ...prev];
-      if (currentUser) saveSavedPlans(currentUser, next);
-      return next;
-    });
-  };
+  // SAVE PLAN — POST plan + sessions to backend
+  const handleStartStudying = async (plan: GeneratedPlan) => {
+    try {
+      // Map preference values for backend
+      const breakMap: Record<string, string> = { "every-25": "every-25", "every-50": "every-50", "every-90": "every-90" };
+      const priorityMap: Record<string, string> = { speed: "speed", quality: "quality", balanced: "balanced" };
 
-  // UPDATE PLAN — called from PlanDetailPage when sessions are toggled
-  const handleUpdatePlan = (updated: SavedPlan) => {
-    setSavedPlans((prev) => {
-      const next = prev.map((p) => (p.id === updated.id ? updated : p));
-      if (currentUser) saveSavedPlans(currentUser, next);
-      return next;
-    });
-  };
+      // Build sessions array from generated schedule
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const sessions = plan.schedule.map((entry: any) => ({
+        session_date: entry.sessionDateISO || plan.dueDate,
+        start_time: entry.startTime || "09:00",
+        end_time: entry.endTime || "10:00",
+        task_name: entry.task,
+      }));
 
-  // DELETE PLAN — called from DashboardPage delete confirmation
-  const handleDeletePlan = (planId: string) => {
-    setSavedPlans((prev) => {
-      const next = prev.filter((p) => p.id !== planId);
-      if (currentUser) saveSavedPlans(currentUser, next);
-      return next;
-    });
-  };
-
-  // EDIT PLAN — called from DashboardPage edit modal
-  // Regenerates the schedule when availability changes
-  const handleEditPlan = (
-    planId: string,
-    updates: {
-      name: string;
-      subject: string;
-      dueDate: string;
-      availability: AvailabilityData;
-    }
-  ) => {
-    setSavedPlans((prev) => {
-      const next = prev.map((p) => {
-        if (p.id !== planId) return p;
-
-        // Rebuild assignment data with updates
-        const updatedAssignment: AssignmentData = {
-          ...p.assignment,
-          name: updates.name,
-          subject: updates.subject,
-          dueDate: updates.dueDate,
-        };
-
-        // Regenerate the schedule with new availability
-        const newPlan = generateStudyPlan(
-          updatedAssignment,
-          updates.availability,
-          p.preferences
-        );
-
-        return {
-          ...p,
-          assignment: updatedAssignment,
-          availability: updates.availability,
-          plan: newPlan,
-          progress: 0,
-          daysRemaining: calcDaysRemaining(updates.dueDate),
-          completedSessions: newPlan.schedule.map(() => false),
-        };
+      await apiCreatePlan({
+        assignment_name: plan.assignmentName,
+        subject: plan.subject,
+        due_date: plan.dueDate,
+        assignment_type: assignment.type === "exam-prep" ? "exam-prep" : assignment.type,
+        workload: assignment.workload,
+        availability,
+        preferences: {
+          session_length: preferences.sessionLength,
+          preferred_study_time: preferences.studyTime,
+          break_frequency: breakMap[preferences.breakFrequency] || "every-50",
+          priority: priorityMap[preferences.priority] || "balanced",
+        },
+        sessions,
       });
-      if (currentUser) saveSavedPlans(currentUser, next);
-      return next;
-    });
+      await refreshPlans();
+    } catch (err) {
+      console.error("Failed to save plan:", err);
+    }
+  };
+
+  // DELETE PLAN
+  const handleDeletePlan = async (planId: string) => {
+    try {
+      await apiDeletePlan(planId);
+      await refreshPlans();
+    } catch (err) {
+      console.error("Failed to delete plan:", err);
+    }
+  };
+
+  // EDIT PLAN
+  const handleEditPlan = async (
+    planId: string,
+    updates: { name: string; subject: string; dueDate: string; availability: AvailabilityData },
+  ) => {
+    try {
+      await apiUpdatePlan(planId, {
+        assignment_name: updates.name,
+        subject: updates.subject,
+        due_date: updates.dueDate,
+        availability: updates.availability,
+      });
+      await refreshPlans();
+    } catch (err) {
+      console.error("Failed to update plan:", err);
+    }
   };
 
   return (
@@ -344,12 +294,12 @@ export default function App() {
       {/* / → Login */}
       <Route path="/" element={<LoginPage onLogin={handleLogin} />} />
 
-      {/* /dashboard → Saved plans (persisted in localStorage) */}
+      {/* /dashboard → Plans fetched from backend API */}
       <Route
         path="/dashboard"
         element={
           <DashboardPage
-            dashboardPlans={savedPlans.map(toDashboardPlan)}
+            dashboardPlans={dashboardPlans}
             userName={currentUserName}
             onEditPlan={handleEditPlan}
             onDeletePlan={handleDeletePlan}
@@ -410,15 +360,7 @@ export default function App() {
       />
 
       {/* /plan/:planId → View and manage a saved plan's sessions */}
-      <Route
-        path="/plan/:planId"
-        element={
-          <PlanDetailPage
-            savedPlans={savedPlans}
-            onUpdatePlan={handleUpdatePlan}
-          />
-        }
-      />
+      <Route path="/plan/:planId" element={<PlanDetailPage />} />
     </Routes>
   );
 }

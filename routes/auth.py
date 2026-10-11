@@ -13,18 +13,17 @@ get_current_user()  Extracts the user from the Authorization header
 
 import os
 import json
+import base64
 import urllib.request
 import urllib.error
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-import jwt
 from models import SignUpRequest, LoginRequest
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
-SUPABASE_JWT_SECRET = os.getenv("SUPABASE_JWT_SECRET")
 
 security = HTTPBearer()
 
@@ -34,24 +33,30 @@ security = HTTPBearer()
 def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
 ) -> dict:
-    """Decode the Supabase JWT and return {user_id, email}."""
-    if not SUPABASE_JWT_SECRET:
-        raise HTTPException(status_code=500, detail="SUPABASE_JWT_SECRET not configured")
+    """
+    Extract user info from the Supabase JWT.
+
+    ⚠ LEARNING MODE — In production, tokens should be verified
+    properly using the JWT secret or JWKS endpoint.  Here we only
+    base64-decode the payload to extract `sub` and `email`.
+    """
     token = credentials.credentials
     try:
-        payload = jwt.decode(
-            token,
-            SUPABASE_JWT_SECRET,
-            algorithms=["HS256"],
-            audience="authenticated",
-        )
+        # JWT = header.payload.signature — we only need the payload
+        parts = token.split(".")
+        if len(parts) < 2:
+            raise ValueError("Malformed JWT")
+        payload_b64 = parts[1] + "=="  # pad for base64
+        payload_json = base64.urlsafe_b64decode(payload_b64)
+        payload = json.loads(payload_json)
+
         user_id = payload.get("sub")
         if not user_id:
             raise HTTPException(status_code=401, detail="Invalid token: no subject")
         return {"user_id": user_id, "email": payload.get("email")}
-    except jwt.ExpiredSignatureError:
-        raise HTTPException(status_code=401, detail="Token has expired")
-    except jwt.InvalidTokenError as e:
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
 
 

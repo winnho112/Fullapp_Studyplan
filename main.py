@@ -4,6 +4,7 @@ main.py — FastAPI application entry point for the StudyPlan backend.
 
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from database import init_database
 from routes import auth, plans, sessions
 
@@ -20,6 +21,15 @@ app = FastAPI(
     description="Backend API for the StudyPlan university study-planning app.",
     version="1.0.0",
     lifespan=lifespan,
+)
+
+# ── CORS — allow the React dev server to call this API ─────────
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 # ── Register routers ───────────────────────────────────────────

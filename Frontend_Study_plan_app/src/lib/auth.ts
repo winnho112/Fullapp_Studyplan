@@ -1,93 +1,42 @@
 /**
- * auth.ts — localStorage-based account management for sign-up / login
+ * auth.ts - Authentication helpers backed by the FastAPI + Supabase API.
  *
- * Accounts are stored as a simple JSON array under the key "studyplan.accounts".
- * Passwords are stored in plaintext (demo/portfolio app — not production-grade).
+ * Tokens are persisted in localStorage so the user stays logged in
+ * across page refreshes.
  */
-export interface Account {
-  name: string;
-  email: string;
-  password: string;
-}
 
-const STORAGE_KEY = "studyplan.accounts";
-
-/** Load all stored accounts. Returns [] if empty or corrupt. */
-export function loadAccounts(): Account[] {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
-    // Backfill name for accounts saved before that field existed
-    return parsed.map((a: Account) => ({
-      ...a,
-      name: a.name || a.email.split("@")[0],
-    }));
-  } catch {
-    return [];
-  }
-}
-
-/** Append a new account to localStorage. */
-export function saveAccount(account: Account): void {
-  const accounts = loadAccounts();
-  accounts.push(account);
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(accounts));
-  } catch {
-    // Storage full or unavailable — account won't persist across refresh
-  }
-}
-
-/** Check whether an account with matching email + password exists. */
-export function findAccount(email: string, password: string): boolean {
-  const accounts = loadAccounts();
-  return accounts.some(
-    (a) => a.email === email && a.password === password
-  );
-}
-
-/** Check whether an email is already registered (regardless of password). */
-export function emailExists(email: string): boolean {
-  const accounts = loadAccounts();
-  return accounts.some((a) => a.email === email);
-}
-
-/** Get the display name for a registered email. Returns email prefix if not found. */
-export function getUserName(email: string): string {
-  const accounts = loadAccounts();
-  const account = accounts.find((a) => a.email === email);
-  return account?.name || email.split("@")[0];
-}
-
-// ── Session management (current logged-in user) ──────────────────
-
+const TOKEN_KEY = "studyplan.access_token";
+const REFRESH_KEY = "studyplan.refresh_token";
 const USER_KEY = "studyplan.current-user";
+const NAME_KEY = "studyplan.current-name";
 
-/** Persist the logged-in user's email to localStorage. */
-export function saveCurrentUser(email: string): void {
-  try {
-    localStorage.setItem(USER_KEY, email);
-  } catch {
-    // Storage unavailable — session won't persist across refresh
-  }
+export function saveSession(
+  accessToken: string,
+  refreshToken: string,
+  email: string,
+  name: string,
+): void {
+  localStorage.setItem(TOKEN_KEY, accessToken);
+  localStorage.setItem(REFRESH_KEY, refreshToken);
+  localStorage.setItem(USER_KEY, email);
+  localStorage.setItem(NAME_KEY, name);
 }
 
-/** Load the logged-in user's email. Returns null if not logged in. */
+export function getAccessToken(): string | null {
+  return localStorage.getItem(TOKEN_KEY);
+}
+
 export function loadCurrentUser(): string | null {
-  try {
-    return localStorage.getItem(USER_KEY);
-  } catch {
-    return null;
-  }
+  return localStorage.getItem(USER_KEY);
 }
 
-/** Clear the current user session (logout). */
+export function getUserName(_email: string): string {
+  return localStorage.getItem(NAME_KEY) || _email.split("@")[0];
+}
+
 export function clearCurrentUser(): void {
-  try {
-    localStorage.removeItem(USER_KEY);
-  } catch {
-    // Ignore
-  }
+  localStorage.removeItem(TOKEN_KEY);
+  localStorage.removeItem(REFRESH_KEY);
+  localStorage.removeItem(USER_KEY);
+  localStorage.removeItem(NAME_KEY);
 }

@@ -1,8 +1,8 @@
 """
 routes/plans.py — CRUD endpoints for study plans.
 
-GET    /plans              List all plans for the logged-in user
-POST   /plans              Create a new plan (with availability + preferences)
+GET    /plans              List all plans for the logged-in user (with progress)
+POST   /plans              Create a new plan (with availability + preferences + sessions)
 PUT    /plans/{plan_id}    Update an existing plan
 DELETE /plans/{plan_id}    Delete a plan and all related data (CASCADE)
 """
@@ -17,13 +17,17 @@ router = APIRouter(tags=["Study Plans"])
 
 # ── Helpers ────────────────────────────────────────────────────
 
-def _row_to_plan(row, avail=None, pref=None) -> dict:
+def _row_to_plan(row, avail=None, pref=None, total=0, completed=0) -> dict:
+    pct = round(completed / total * 100, 2) if total > 0 else 0.0
     plan = {
         "id": str(row[0]), "user_id": str(row[1]),
         "assignment_name": row[2], "subject": row[3],
         "due_date": str(row[4]), "assignment_type": row[5],
         "workload": row[6], "status": row[7],
         "created_at": str(row[8]),
+        "total_sessions": total,
+        "completed_sessions": completed,
+        "completion_percentage": pct,
     }
     if avail:
         plan["availability"] = {
@@ -42,6 +46,21 @@ def _row_to_plan(row, avail=None, pref=None) -> dict:
     return plan
 
 
+def _session_counts(cur, plan_id: str) -> tuple[int, int]:
+    """Return (total_sessions, completed_sessions) for a plan."""
+    cur.execute(
+        "SELECT COUNT(*) FROM public.study_sessions WHERE plan_id = %s",
+        (plan_id,),
+    )
+    total = cur.fetchone()[0]
+    cur.execute(
+        "SELECT COUNT(*) FROM public.study_sessions WHERE plan_id = %s AND is_completed = TRUE",
+        (plan_id,),
+    )
+    completed = cur.fetchone()[0]
+    return total, completed
+
+
 def _fetch_full_plan(conn, plan_id: str) -> dict:
     cur = conn.cursor()
     cur.execute("SELECT * FROM public.study_plans WHERE id = %s", (plan_id,))
@@ -53,8 +72,9 @@ def _fetch_full_plan(conn, plan_id: str) -> dict:
     avail_row = cur.fetchone()
     cur.execute("SELECT * FROM public.preferences WHERE plan_id = %s", (plan_id,))
     pref_row = cur.fetchone()
+    total, completed = _session_counts(cur, plan_id)
     cur.close()
-    return _row_to_plan(plan_row, avail_row, pref_row)
+    return _row_to_plan(plan_row, avail_row, pref_row, total, completed)
 
 
 def _verify_plan_owner(conn, plan_id: str, user_id: str):
@@ -84,7 +104,8 @@ def list_plans(user: dict = Depends(get_current_user)):
         avail = cur.fetchone()
         cur.execute("SELECT * FROM public.preferences WHERE plan_id = %s", (pid,))
         pref = cur.fetchone()
-        plans.append(_row_to_plan(pr, avail, pref))
+        total, completed = _session_counts(cur, pid)
+        plans.append(_row_to_plan(pr, avail, pref, total, completed))
     cur.close()
     conn.close()
     return plans
@@ -119,6 +140,14 @@ def create_plan(body: StudyPlanCreate, user: dict = Depends(get_current_user)):
             (plan_id, p.session_length, p.preferred_study_time,
              p.break_frequency, p.priority),
         )
+        # Insert study sessions (batch)
+        for s in body.sessions:
+            cur.execute(
+                """INSERT INTO public.study_sessions
+                       (plan_id, session_date, start_time, end_time, task_name)
+                   VALUES (%s,%s,%s,%s,%s)""",
+                (plan_id, s.session_date, s.start_time, s.end_time, s.task_name),
+            )
         conn.commit()
     except Exception as e:
         conn.rollback()

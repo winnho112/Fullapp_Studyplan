@@ -66,8 +66,8 @@ export default function DashboardPage({
   });
   const todayStr = new Date().toISOString().split("T")[0];
 
-  const totalEditHours = Object.values(editAvailability).reduce(
-    (sum, h) => sum + h,
+  const totalEditHours = DAYS.reduce(
+    (sum, { key }) => sum + Number(editAvailability[key]),
     0
   );
 

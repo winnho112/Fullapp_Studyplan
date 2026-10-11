@@ -40,15 +40,24 @@ class AvailabilityResponse(AvailabilityCreate):
 # ── Preferences ────────────────────────────────────────────────
 
 class PreferencesCreate(BaseModel):
-    session_length: int          # 25 | 50 | 90
+    session_length: str          # "25" | "50" | "90"
     preferred_study_time: str    # morning | afternoon | evening
-    break_frequency: str         # every_25min | every_50min | when_needed
-    priority: str                # finish_early | balanced | difficult_first
+    break_frequency: str         # every-25 | every-50 | every-90
+    priority: str                # speed | quality | balanced
 
 
 class PreferencesResponse(PreferencesCreate):
     id: str
     plan_id: str
+
+
+# ── Study Sessions (for creation inside a plan) ────────────────
+
+class SessionCreate(BaseModel):
+    session_date: date
+    start_time: str   # "HH:MM"
+    end_time: str      # "HH:MM"
+    task_name: str
 
 
 # ── Study Plans ────────────────────────────────────────────────
@@ -57,10 +66,11 @@ class StudyPlanCreate(BaseModel):
     assignment_name: str
     subject: str
     due_date: date
-    assignment_type: str         # essay | report | presentation | exam | project
+    assignment_type: str         # essay | report | presentation | exam-prep | project
     workload: str                # light | moderate | heavy
     availability: AvailabilityCreate
     preferences: PreferencesCreate
+    sessions: list[SessionCreate] = []
 
 
 class StudyPlanUpdate(BaseModel):
@@ -86,6 +96,9 @@ class StudyPlanResponse(BaseModel):
     created_at: str
     availability: Optional[AvailabilityResponse] = None
     preferences: Optional[PreferencesResponse] = None
+    total_sessions: int = 0
+    completed_sessions: int = 0
+    completion_percentage: float = 0.0
 
 
 # ── Study Sessions ─────────────────────────────────────────────
