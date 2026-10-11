@@ -79,12 +79,32 @@ function generateStudyPlan(
 ): GeneratedPlan {
   const today = new Date();
   const due = new Date(assignment.dueDate);
-  const diffTime = due.getTime() - today.getTime();
-  const daysRemaining = Math.max(Math.ceil(diffTime / (1000 * 60 * 60 * 24)), 1);
 
-  // Tasks based on workload
+  const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
+  const dayKeys: (keyof AvailabilityData)[] = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+
+  const slot = TIME_SLOTS[preferences.studyTime] || TIME_SLOTS.afternoon;
+  const sessionDuration = Number(preferences.sessionLength);
+
+  // 1. Build array of study days (dates where user has availability > 0)
+  //    Stop 1 day before the deadline as a buffer
+  const bufferDate = new Date(due);
+  bufferDate.setDate(bufferDate.getDate() - 1);
+
+  const studyDays: { date: Date; dayName: string }[] = [];
+  const cursor = new Date(today);
+  while (cursor < bufferDate) {
+    const dow = cursor.getDay(); // 0=Sun, 1=Mon, ...
+    const keyIndex = dow === 0 ? 6 : dow - 1;
+    if (availability[dayKeys[keyIndex]] > 0) {
+      studyDays.push({ date: new Date(cursor), dayName: dayNames[keyIndex] });
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  // 2. Determine task names based on workload
   let tasks: string[];
-  if (assignment.workload === "heavy" && daysRemaining <= 5) {
+  if (assignment.workload === "heavy" && studyDays.length <= 5) {
     tasks = ["Research & gather sources", "Analyse data", "Draft findings", "Write recommendations", "Review & edit"];
   } else if (assignment.workload === "heavy") {
     tasks = ["Research & gather sources", "Analyse data", "Create outline", "Draft findings", "Write recommendations", "Review & edit", "Final polish"];
@@ -94,60 +114,76 @@ function generateStudyPlan(
     tasks = ["Plan", "Write", "Submit"];
   }
 
-  const slot = TIME_SLOTS[preferences.studyTime] || TIME_SLOTS.afternoon;
-  const sessionDuration = Number(preferences.sessionLength);
+  // 3. Distribute days across tasks based on priority preference
+  let totalDaysToUse = studyDays.length;
+  const taskDayCounts: number[] = new Array(tasks.length).fill(0);
 
-  // Build day-by-day schedule with proper ISO dates and HH:MM times
-  const dayNames = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
-  const dayKeys: (keyof AvailabilityData)[] = ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"];
+  if (preferences.priority === "speed") {
+    // finish_early — use ~75% of days, leave buffer at the end
+    totalDaysToUse = Math.max(tasks.length, Math.floor(studyDays.length * 0.75));
+  }
+  // "quality" and "balanced" use all available days
 
-  const schedule: StudyPlanEntry[] = [];
-  let taskIndex = 0;
-  const currentDate = new Date(today);
-
-  for (let dayOffset = 0; dayOffset < daysRemaining && taskIndex < tasks.length; dayOffset++) {
-    const checkDate = new Date(currentDate);
-    checkDate.setDate(checkDate.getDate() + dayOffset);
-    const dayOfWeek = checkDate.getDay();
-    const dayKeyIndex = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-    const dayKey = dayKeys[dayKeyIndex];
-    const hoursAvailable = availability[dayKey];
-
-    if (hoursAvailable > 0 && taskIndex < tasks.length) {
-      const sessionsPerDay = Math.max(1, Math.floor((hoursAvailable * 60) / (sessionDuration + 10)));
-      for (let s = 0; s < sessionsPerDay && taskIndex < tasks.length; s++) {
-        schedule.push({
-          day: dayNames[dayKeyIndex],
-          date: checkDate.toLocaleDateString("en-AU", { day: "numeric", month: "short" }),
-          task: tasks[taskIndex],
-          timeSlot: slot.label,
-          duration: sessionDuration,
-          // Extra fields for backend (not in type but carried through)
-          sessionDateISO: toISODate(checkDate),
-          startTime: slot.start,
-          endTime: slot.end,
-        } as StudyPlanEntry & { sessionDateISO: string; startTime: string; endTime: string });
-        taskIndex++;
-      }
+  if (preferences.priority === "quality") {
+    // difficult_first — weight earlier tasks more heavily
+    const weights = tasks.map((_, i) => tasks.length - i);
+    const totalWeight = weights.reduce((a, b) => a + b, 0);
+    let assigned = 0;
+    for (let i = 0; i < tasks.length; i++) {
+      taskDayCounts[i] = Math.max(1, Math.round((weights[i] / totalWeight) * totalDaysToUse));
+      assigned += taskDayCounts[i];
+    }
+    // Adjust rounding to match totalDaysToUse exactly
+    let diff = assigned - totalDaysToUse;
+    // If we over-assigned, trim from last tasks
+    for (let i = tasks.length - 1; i >= 0 && diff > 0; i--) {
+      const trim = Math.min(diff, taskDayCounts[i] - 1);
+      taskDayCounts[i] -= trim;
+      diff -= trim;
+    }
+    // If we under-assigned, add to first tasks
+    for (let i = 0; i < tasks.length && diff < 0; i++) {
+      taskDayCounts[i]++;
+      diff++;
+    }
+  } else {
+    // balanced or speed — divide equally (speed just uses fewer total days)
+    const base = Math.floor(totalDaysToUse / tasks.length);
+    const extra = totalDaysToUse % tasks.length;
+    for (let i = 0; i < tasks.length; i++) {
+      taskDayCounts[i] = Math.max(1, base + (i < extra ? 1 : 0));
     }
   }
 
-  // Fill remaining tasks into flexible slots
-  while (taskIndex < tasks.length) {
-    schedule.push({
-      day: "Flexible",
-      date: "As needed",
-      task: tasks[taskIndex],
-      timeSlot: "Flexible",
-      duration: sessionDuration,
-      sessionDateISO: toISODate(today),
-      startTime: slot.start,
-      endTime: slot.end,
-    } as StudyPlanEntry & { sessionDateISO: string; startTime: string; endTime: string });
-    taskIndex++;
+  // 4. Generate sessions — one per study day, labelled with day-of-task
+  const schedule: StudyPlanEntry[] = [];
+  let dayIndex = 0;
+
+  for (let t = 0; t < tasks.length; t++) {
+    const daysForTask = taskDayCounts[t];
+    for (let d = 0; d < daysForTask && dayIndex < studyDays.length; d++) {
+      const sd = studyDays[dayIndex];
+      const label = daysForTask > 1
+        ? `${tasks[t]} (Day ${d + 1} of ${daysForTask})`
+        : tasks[t];
+
+      schedule.push({
+        day: sd.dayName,
+        date: sd.date.toLocaleDateString("en-AU", { day: "numeric", month: "short" }),
+        task: label,
+        timeSlot: slot.label,
+        duration: sessionDuration,
+        sessionDateISO: toISODate(sd.date),
+        startTime: slot.start,
+        endTime: slot.end,
+      } as StudyPlanEntry & { sessionDateISO: string; startTime: string; endTime: string });
+
+      dayIndex++;
+    }
   }
 
   const totalHours = Math.round((schedule.length * sessionDuration) / 60);
+  const daysRemaining = Math.max(Math.ceil((due.getTime() - today.getTime()) / (1000 * 60 * 60 * 24)), 1);
 
   return {
     assignmentName: assignment.name,
