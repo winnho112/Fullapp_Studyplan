@@ -111,6 +111,7 @@ class StudySessionResponse(BaseModel):
     end_time: str
     task_name: str
     is_completed: bool
+    note: Optional[str] = None
 
 
 class ProgressResponse(BaseModel):

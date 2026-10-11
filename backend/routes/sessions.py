@@ -6,6 +6,8 @@ PATCH /sessions/{session_id}/complete    Toggle completion status
 GET   /plans/{plan_id}/progress          Completion percentage
 """
 
+from typing import Optional
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException
 from routes.auth import get_current_user
 from database import get_connection
@@ -31,7 +33,12 @@ def _serialize_session(row) -> dict:
         "end_time": str(row[4]),
         "task_name": row[5],
         "is_completed": row[6],
+        "note": row[7] if len(row) > 7 else None,
     }
+
+
+class SessionUpdate(BaseModel):
+    note: Optional[str] = None
 
 
 # ── Endpoints ──────────────────────────────────────────────────
@@ -54,14 +61,18 @@ def list_sessions(plan_id: str, user: dict = Depends(get_current_user)):
 
 
 @router.patch("/sessions/{session_id}/complete")
-def toggle_complete(session_id: str, user: dict = Depends(get_current_user)):
-    """Toggle is_completed on a session (True ↔ False)."""
+def toggle_complete(
+    session_id: str,
+    body: SessionUpdate = None,
+    user: dict = Depends(get_current_user),
+):
+    """Toggle is_completed on a session and optionally update its note."""
     conn = get_connection()
     cur = conn.cursor()
     try:
         # Verify the session belongs to one of the user's plans
         cur.execute(
-            """SELECT s.id, s.is_completed FROM public.study_sessions s
+            """SELECT s.id, s.is_completed, s.note FROM public.study_sessions s
                JOIN public.study_plans p ON s.plan_id = p.id
                WHERE s.id = %s AND p.user_id = %s""",
             (session_id, user["user_id"]),
@@ -71,9 +82,11 @@ def toggle_complete(session_id: str, user: dict = Depends(get_current_user)):
             raise HTTPException(status_code=404, detail="Session not found")
 
         new_val = not row[1]
+        note_val = body.note if body and body.note is not None else row[2]
+
         cur.execute(
-            "UPDATE public.study_sessions SET is_completed = %s WHERE id = %s",
-            (new_val, session_id),
+            "UPDATE public.study_sessions SET is_completed = %s, note = %s WHERE id = %s",
+            (new_val, note_val, session_id),
         )
         conn.commit()
     except HTTPException:
@@ -85,7 +98,44 @@ def toggle_complete(session_id: str, user: dict = Depends(get_current_user)):
         cur.close()
         conn.close()
 
-    return {"id": session_id, "is_completed": new_val}
+    return {"id": session_id, "is_completed": new_val, "note": note_val}
+
+
+@router.patch("/sessions/{session_id}/note")
+def update_note(
+    session_id: str,
+    body: SessionUpdate = None,
+    user: dict = Depends(get_current_user),
+):
+    """Update only the note on a session without toggling completion."""
+    conn = get_connection()
+    cur = conn.cursor()
+    try:
+        cur.execute(
+            """SELECT s.id FROM public.study_sessions s
+               JOIN public.study_plans p ON s.plan_id = p.id
+               WHERE s.id = %s AND p.user_id = %s""",
+            (session_id, user["user_id"]),
+        )
+        if not cur.fetchone():
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        note_val = body.note if body else None
+        cur.execute(
+            "UPDATE public.study_sessions SET note = %s WHERE id = %s",
+            (note_val, session_id),
+        )
+        conn.commit()
+    except HTTPException:
+        raise
+    except Exception as e:
+        conn.rollback()
+        raise HTTPException(status_code=400, detail=str(e))
+    finally:
+        cur.close()
+        conn.close()
+
+    return {"id": session_id, "note": note_val}
 
 
 @router.get("/plans/{plan_id}/progress")

@@ -161,6 +161,7 @@ export interface ApiSession {
   end_time: string;
   task_name: string;
   is_completed: boolean;
+  note: string | null;
 }
 
 export async function apiGetSessions(
@@ -183,4 +184,14 @@ export async function apiGetProgress(planId: string) {
     completed_sessions: number;
     completion_percentage: number;
   }>(`/plans/${planId}/progress`);
+}
+
+export async function apiSaveNote(sessionId: string, note: string) {
+  return apiFetch<{ id: string; note: string | null }>(
+    `/sessions/${sessionId}/note`,
+    {
+      method: "PATCH",
+      body: JSON.stringify({ note }),
+    },
+  );
 }
