@@ -42,6 +42,9 @@ export interface StudyPlanEntry {
   task: string;
   timeSlot: string;
   duration: number; // minutes
+  sessionDateISO: string; // "YYYY-MM-DD" for API submission
+  startTime: string; // "HH:MM"
+  endTime: string; // "HH:MM"
 }
 
 /** The full generated study plan */
@@ -49,6 +52,8 @@ export interface GeneratedPlan {
   assignmentName: string;
   subject: string;
   dueDate: string;
+  assignmentType: string;
+  workload: string;
   totalDays: number;
   totalHours: number;
   schedule: StudyPlanEntry[];

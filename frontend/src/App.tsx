@@ -176,7 +176,7 @@ function generateStudyPlan(
         sessionDateISO: toISODate(sd.date),
         startTime: slot.start,
         endTime: slot.end,
-      } as StudyPlanEntry & { sessionDateISO: string; startTime: string; endTime: string });
+      });
 
       dayIndex++;
     }
@@ -189,6 +189,8 @@ function generateStudyPlan(
     assignmentName: assignment.name,
     subject: assignment.subject,
     dueDate: assignment.dueDate,
+    assignmentType: assignment.type,
+    workload: assignment.workload,
     totalDays: daysRemaining,
     totalHours,
     schedule,

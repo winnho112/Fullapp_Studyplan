@@ -107,32 +107,39 @@ ALTER TABLE public.preferences    ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.study_sessions ENABLE ROW LEVEL SECURITY;
 
 -- ---- profiles policies ----
+DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
 CREATE POLICY "Users can view own profile"
     ON public.profiles FOR SELECT
     USING (auth.uid() = id);
 
+DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 CREATE POLICY "Users can update own profile"
     ON public.profiles FOR UPDATE
     USING (auth.uid() = id);
 
 -- ---- study_plans policies ----
+DROP POLICY IF EXISTS "Users can view own plans" ON public.study_plans;
 CREATE POLICY "Users can view own plans"
     ON public.study_plans FOR SELECT
     USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can insert own plans" ON public.study_plans;
 CREATE POLICY "Users can insert own plans"
     ON public.study_plans FOR INSERT
     WITH CHECK (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can update own plans" ON public.study_plans;
 CREATE POLICY "Users can update own plans"
     ON public.study_plans FOR UPDATE
     USING (auth.uid() = user_id);
 
+DROP POLICY IF EXISTS "Users can delete own plans" ON public.study_plans;
 CREATE POLICY "Users can delete own plans"
     ON public.study_plans FOR DELETE
     USING (auth.uid() = user_id);
 
 -- ---- availability policies ----
+DROP POLICY IF EXISTS "Users can view own availability" ON public.availability;
 CREATE POLICY "Users can view own availability"
     ON public.availability FOR SELECT
     USING (EXISTS (
@@ -141,6 +148,7 @@ CREATE POLICY "Users can view own availability"
           AND study_plans.user_id = auth.uid()
     ));
 
+DROP POLICY IF EXISTS "Users can insert own availability" ON public.availability;
 CREATE POLICY "Users can insert own availability"
     ON public.availability FOR INSERT
     WITH CHECK (EXISTS (
@@ -149,6 +157,7 @@ CREATE POLICY "Users can insert own availability"
           AND study_plans.user_id = auth.uid()
     ));
 
+DROP POLICY IF EXISTS "Users can update own availability" ON public.availability;
 CREATE POLICY "Users can update own availability"
     ON public.availability FOR UPDATE
     USING (EXISTS (
@@ -157,6 +166,7 @@ CREATE POLICY "Users can update own availability"
           AND study_plans.user_id = auth.uid()
     ));
 
+DROP POLICY IF EXISTS "Users can delete own availability" ON public.availability;
 CREATE POLICY "Users can delete own availability"
     ON public.availability FOR DELETE
     USING (EXISTS (
@@ -166,6 +176,7 @@ CREATE POLICY "Users can delete own availability"
     ));
 
 -- ---- preferences policies ----
+DROP POLICY IF EXISTS "Users can view own preferences" ON public.preferences;
 CREATE POLICY "Users can view own preferences"
     ON public.preferences FOR SELECT
     USING (EXISTS (
@@ -174,6 +185,7 @@ CREATE POLICY "Users can view own preferences"
           AND study_plans.user_id = auth.uid()
     ));
 
+DROP POLICY IF EXISTS "Users can insert own preferences" ON public.preferences;
 CREATE POLICY "Users can insert own preferences"
     ON public.preferences FOR INSERT
     WITH CHECK (EXISTS (
@@ -182,6 +194,7 @@ CREATE POLICY "Users can insert own preferences"
           AND study_plans.user_id = auth.uid()
     ));
 
+DROP POLICY IF EXISTS "Users can update own preferences" ON public.preferences;
 CREATE POLICY "Users can update own preferences"
     ON public.preferences FOR UPDATE
     USING (EXISTS (
@@ -190,6 +203,7 @@ CREATE POLICY "Users can update own preferences"
           AND study_plans.user_id = auth.uid()
     ));
 
+DROP POLICY IF EXISTS "Users can delete own preferences" ON public.preferences;
 CREATE POLICY "Users can delete own preferences"
     ON public.preferences FOR DELETE
     USING (EXISTS (
@@ -199,6 +213,7 @@ CREATE POLICY "Users can delete own preferences"
     ));
 
 -- ---- study_sessions policies ----
+DROP POLICY IF EXISTS "Users can view own sessions" ON public.study_sessions;
 CREATE POLICY "Users can view own sessions"
     ON public.study_sessions FOR SELECT
     USING (EXISTS (
@@ -207,6 +222,7 @@ CREATE POLICY "Users can view own sessions"
           AND study_plans.user_id = auth.uid()
     ));
 
+DROP POLICY IF EXISTS "Users can insert own sessions" ON public.study_sessions;
 CREATE POLICY "Users can insert own sessions"
     ON public.study_sessions FOR INSERT
     WITH CHECK (EXISTS (
@@ -215,6 +231,7 @@ CREATE POLICY "Users can insert own sessions"
           AND study_plans.user_id = auth.uid()
     ));
 
+DROP POLICY IF EXISTS "Users can update own sessions" ON public.study_sessions;
 CREATE POLICY "Users can update own sessions"
     ON public.study_sessions FOR UPDATE
     USING (EXISTS (
@@ -223,6 +240,7 @@ CREATE POLICY "Users can update own sessions"
           AND study_plans.user_id = auth.uid()
     ));
 
+DROP POLICY IF EXISTS "Users can delete own sessions" ON public.study_sessions;
 CREATE POLICY "Users can delete own sessions"
     ON public.study_sessions FOR DELETE
     USING (EXISTS (

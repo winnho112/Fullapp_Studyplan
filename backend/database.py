@@ -6,10 +6,13 @@ creates all five tables + the auth trigger when the server starts.
 """
 
 import os
+from pathlib import Path
 import psycopg2
 from dotenv import load_dotenv
 
-load_dotenv()
+# Load .env from the backend directory regardless of working directory
+_backend_dir = Path(__file__).resolve().parent
+load_dotenv(_backend_dir / ".env")
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
