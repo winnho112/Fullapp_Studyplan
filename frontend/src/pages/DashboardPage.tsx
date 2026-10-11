@@ -12,7 +12,7 @@ import PrimaryButton from "../components/PrimaryButton";
 import StudyPlanCard from "../components/StudyPlanCard";
 import InputField from "../components/InputField";
 import type { DashboardPlan, AvailabilityData } from "../types";
-import { BookOpen, Plus, X, Clock } from "lucide-react";
+import { BookOpen, Plus, X, Clock, LogOut } from "lucide-react";
 import { cn } from "../lib/utils";
 
 const DAYS: { key: keyof AvailabilityData; label: string }[] = [
@@ -40,6 +40,7 @@ interface DashboardPageProps {
     }
   ) => void;
   onDeletePlan: (planId: string) => void;
+  onLogout: () => void;
 }
 
 export default function DashboardPage({
@@ -47,6 +48,7 @@ export default function DashboardPage({
   userName,
   onEditPlan,
   onDeletePlan,
+  onLogout,
 }: DashboardPageProps) {
   const navigate = useNavigate();
   const [editingPlan, setEditingPlan] = useState<DashboardPlan | null>(null);
@@ -135,9 +137,14 @@ export default function DashboardPage({
               </p>
             </div>
           </div>
-          <PrimaryButton onClick={() => navigate("/create/assignment")}>
-            <Plus size={16} /> Create New Plan
-          </PrimaryButton>
+          <div className="flex items-center gap-2">
+            <PrimaryButton onClick={() => navigate("/create/assignment")}>
+              <Plus size={16} /> Create New Plan
+            </PrimaryButton>
+            <PrimaryButton variant="secondary" onClick={onLogout}>
+              <LogOut size={16} /> Log Out
+            </PrimaryButton>
+          </div>
         </div>
 
         {/* Plan cards grid */}

@@ -6,7 +6,7 @@
  * to the backend along with the generated sessions.
  */
 import { useState, useEffect, useCallback } from "react";
-import { Routes, Route } from "react-router-dom";
+import { Routes, Route, useNavigate } from "react-router-dom";
 import type {
   AssignmentData,
   AvailabilityData,
@@ -15,7 +15,7 @@ import type {
   StudyPlanEntry,
   DashboardPlan,
 } from "./types";
-import { loadCurrentUser, getUserName, saveSession } from "./lib/auth";
+import { loadCurrentUser, getUserName, saveSession, clearCurrentUser } from "./lib/auth";
 import {
   apiLogin,
   apiSignup,
@@ -199,6 +199,8 @@ function generateStudyPlan(
 // MAIN APP COMPONENT
 // ============================================================
 export default function App() {
+  const navigate = useNavigate();
+
   // CENTRAL STATE — form data persists across page navigation
   const [assignment, setAssignment] = useState<AssignmentData>({
     name: "", subject: "", dueDate: "", type: "essay", workload: "moderate",
@@ -237,6 +239,14 @@ export default function App() {
   const handleAssignmentComplete = (data: AssignmentData) => setAssignment(data);
   const handleAvailabilityComplete = (data: AvailabilityData) => setAvailability(data);
   const handlePreferencesComplete = (data: PreferencesData) => setPreferences(data);
+
+  const handleLogout = () => {
+    clearCurrentUser();
+    setCurrentUser(null);
+    setCurrentUserName("");
+    setDashboardPlans([]);
+    navigate("/");
+  };
 
   const handleLogin = async (email: string, password: string, name?: string) => {
     try {
@@ -339,6 +349,7 @@ export default function App() {
             userName={currentUserName}
             onEditPlan={handleEditPlan}
             onDeletePlan={handleDeletePlan}
+            onLogout={handleLogout}
           />
         }
       />
