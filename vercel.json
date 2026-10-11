@@ -16,16 +16,23 @@
       }
     }
   ],
-  "routes": [
-    { "src": "/health", "dest": "api/index.py" },
-    { "src": "/auth", "dest": "api/index.py" },
-    { "src": "/auth/(.*)", "dest": "api/index.py" },
-    { "src": "/plans", "dest": "api/index.py" },
-    { "src": "/plans/(.*)", "dest": "api/index.py" },
-    { "src": "/sessions", "dest": "api/index.py" },
-    { "src": "/sessions/(.*)", "dest": "api/index.py" },
-    { "src": "/assets/(.*)", "dest": "/frontend/assets/$1" },
-    { "handle": "filesystem" },
-    { "src": "/(.*)", "dest": "/frontend/index.html" }
+  "rewrites": [
+    { "source": "/health", "destination": "/api/index.py" },
+    { "source": "/auth", "destination": "/api/index.py" },
+    { "source": "/auth/(.*)", "destination": "/api/index.py" },
+    { "source": "/plans", "destination": "/api/index.py" },
+    { "source": "/plans/(.*)", "destination": "/api/index.py" },
+    { "source": "/sessions", "destination": "/api/index.py" },
+    { "source": "/sessions/(.*)", "destination": "/api/index.py" }
+  ],
+  "headers": [
+    {
+      "source": "/api/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,POST,PUT,PATCH,DELETE,OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type,Authorization" }
+      ]
+    }
   ]
 }
