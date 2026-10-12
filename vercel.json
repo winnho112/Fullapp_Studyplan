@@ -1,17 +1,12 @@
 {
-  "version": 2,
-  "builds": [
-    {
-      "src": "frontend/package.json",
-      "use": "@vercel/static-build",
-      "config": { "distDir": "dist" }
-    },
-    {
-      "src": "api/index.py",
-      "use": "@vercel/python",
-      "config": { "includeFiles": ["backend/**"] }
+  "buildCommand": "cd frontend && npm run vercel-build",
+  "outputDirectory": "frontend/dist",
+  "installCommand": "pip install -r requirements.txt && cd frontend && npm install",
+  "functions": {
+    "api/index.py": {
+      "includeFiles": "backend/**"
     }
-  ],
+  },
   "routes": [
     { "src": "/health", "dest": "/api/index.py" },
     { "src": "/auth/(.*)", "dest": "/api/index.py" },
@@ -19,7 +14,6 @@
     { "src": "/plans/(.*)", "dest": "/api/index.py" },
     { "src": "/sessions", "dest": "/api/index.py" },
     { "src": "/sessions/(.*)", "dest": "/api/index.py" },
-    { "src": "/assets/(.*)", "dest": "/assets/$1" },
     { "handle": "filesystem" },
     { "src": "/(.*)", "dest": "/index.html" }
   ]
